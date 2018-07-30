@@ -69,6 +69,11 @@ func (ctx *Context) registerOne(item interface{}) {
 // Inject injects the dependencies asked for into the function provided. If anything
 // goes wrong, it will panic. It's expected that this will be used in favour of TryInject
 // in most cases, since failure to inject something is normally a sign of programmer error.
+//
+// If a type that is being injected has an OnInjection method attached to it, that method
+// will be run once just before the first attempt to inject the type. Arguments to this
+// method are themselves injected into it. This allows for lazy initialisation and
+// initialisation that depends on other injected types. See the Injection example.
 func (ctx *Context) Inject(fn interface{}) {
 	err := ctx.TryInject(fn)
 
