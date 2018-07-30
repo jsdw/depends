@@ -52,7 +52,7 @@ func main() {
 
 Types can do some initialisation just prior to the first time that they are injected anywhere by having an `OnInjection` method. Any arguments provided to this function will also be injected through the same context.
 
-This allows for lazy initialisation and initialisation which depends on the values of other injected types.
+This allows for lazy initialisation and initialisation which depends on the values of other injected types:
 
 ```go
 import (
@@ -95,6 +95,40 @@ func main() {
 		// Thus, this will print "Foo is 2002"
 		fmt.Printf("Foo is %d", f.inner)
 	})
+
+}
+```
+
+For more control over which dependencies are available, we can create our own non-global `Context`s. We can also create child `Context`s which can be used to selectively override or add additional dependencies on top of the parent `Context`, while leaving the parent unchanged:
+
+```go
+import (
+    "github.com/jsdw/depends"
+)
+
+type Foo int
+type Bar int
+
+func main() {
+
+    ctx := depends.New()
+
+    ctx.Register(Foo(100))
+    ctx.Register(Bar(10))
+
+    childCtx := ctx.Child()
+
+    // override our Foo dependency in the child:
+    childCtx.Register(Foo(200))
+
+    ctx.Inject(func(f Foo) {
+        // f == Foo(100)
+    })
+
+    childCtx.Inject(func(f Foo, b Bar) {
+        // f == Foo(200)
+        // b == Bar(10)
+    })
 
 }
 ```
