@@ -10,7 +10,7 @@ One use case of this approach is to replace global variables in many places.
 The advantage of doing so is that you can override them when needed by creating
 a child Context, or mock them during testing.
 
-```
+```go
 import (
 	"bytes"
 	"fmt"
@@ -55,9 +55,12 @@ func main() {
 
 Types can do some initialisation just prior to the first time that they are injected
 anywhere by having an `OnInjection` method. Any arguments provided to this function
-will also be injected through the same context:
+will also be injected through the same context.
 
-```
+This allows for lazy initialisation and initialisation which depends on the values of
+other injected types.
+
+```go
 import (
     "fmt"
     "github.com/jsdw/depends"
