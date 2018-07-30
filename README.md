@@ -1,4 +1,4 @@
-Depends - A small, versatile dependency injection library for Go
+Depends - A small, versatile, and thread safe dependency injection library for Go
 ================================================================
 
 [![GoDoc](https://godoc.org/github.com/jsdw/depends?status.svg)](https://godoc.org/github.com/jsdw/depends)
@@ -50,5 +50,54 @@ func main() {
 
     // Prints "wibble":
 	fmt.Println(w)
+}
+```
+
+Types can do some initialisation just prior to the first time that they are injected
+anywhere by having an `OnInjection` method. Any arguments provided to this function
+will also be injected through the same context:
+
+```
+import (
+    "fmt"
+    "github.com/jsdw/depends"
+)
+
+type Foo struct {
+	inner int
+}
+
+// When we try to inject Foo for the first time, we get the values of Bar
+// and Zoo and set Foo to be the sum of them:
+func (ti *Foo) OnInjection(h Bar, z Zoo) {
+	ti.inner = int(h) + int(z)
+}
+
+type Bar int
+
+// When we try to inject Bar for the first time, we get the value of Wibble
+// and set Bar to be equal to it:
+func (ti *Bar) OnInjection(h Wibble) {
+	*ti = Bar(h)
+}
+
+type Wibble int
+
+type Zoo int
+
+func main() {
+
+	depends.Register(Foo{})
+	depends.Register(Bar(100))
+	depends.Register(Wibble(2000))
+	depends.Register(Zoo(2))
+
+	depends.Inject(func(f Foo) {
+		// Bar.OnInjection sets Bar = Wibble
+		// Foo.OnInjection sets Foo.inner = Bar + Zoo
+		// Thus, this will print "Foo is 2002"
+		fmt.Printf("Foo is %d", f.inner)
+	})
+
 }
 ```
