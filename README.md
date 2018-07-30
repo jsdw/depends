@@ -1,5 +1,5 @@
 Depends - A small, versatile, and thread safe dependency injection library for Go
-================================================================
+=================================================================================
 
 [![GoDoc](https://godoc.org/github.com/jsdw/depends?status.svg)](https://godoc.org/github.com/jsdw/depends)
 
