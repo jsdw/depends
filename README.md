@@ -1,7 +1,7 @@
 Depends - A small, versatile dependency injection library for Go
 ================================================================
 
-[![GoDoc](https://godoc.org/github.com/jsdw/depends/web?status.svg)](https://godoc.org/github.com/jsdw/depends/web)
+[![GoDoc](https://godoc.org/github.com/jsdw/depends?status.svg)](https://godoc.org/github.com/jsdw/depends)
 
 The purpose of this library is to provide an easy way to register and inject
 dependencies into functions.
