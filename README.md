@@ -3,12 +3,9 @@ Depends - A small, versatile, and thread safe dependency injection library for G
 
 [![GoDoc](https://godoc.org/github.com/jsdw/depends?status.svg)](https://godoc.org/github.com/jsdw/depends)
 
-The purpose of this library is to provide an easy way to register and inject
-dependencies into functions.
+The purpose of this library is to provide an easy way to register and inject dependencies into functions.
 
-One use case of this approach is to replace global variables in many places.
-The advantage of doing so is that you can override them when needed by creating
-a child Context, or mock them during testing.
+One use case of this approach is to replace global variables in many places. The advantage of doing so is that you can override them when needed by creating a child Context, or mock them during testing.
 
 ```go
 import (
@@ -53,12 +50,9 @@ func main() {
 }
 ```
 
-Types can do some initialisation just prior to the first time that they are injected
-anywhere by having an `OnInjection` method. Any arguments provided to this function
-will also be injected through the same context.
+Types can do some initialisation just prior to the first time that they are injected anywhere by having an `OnInjection` method. Any arguments provided to this function will also be injected through the same context.
 
-This allows for lazy initialisation and initialisation which depends on the values of
-other injected types.
+This allows for lazy initialisation and initialisation which depends on the values of other injected types.
 
 ```go
 import (
@@ -104,3 +98,9 @@ func main() {
 
 }
 ```
+
+## Warning
+
+A word of warning: using this library trades a certain amount of compile time safety (accessing global variables for instance) for run time checks (checking that a dependency has actually been registered when we ask for it). This is an important tradeoff to consider.
+
+In cases wherein dependencies are injected and used early on, a fast failure will be easy to spot, and the advantage of being able to mock, adjust and easily access dependencies can outweigh the downsides. On the other hand, rarely-run functions making use of more obscure dependencies (that you could have forgotten to actually register) could lead to annoying and unnecesary failures.
