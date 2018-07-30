@@ -14,6 +14,18 @@
 // Check out the examples and tests to find out more about how this
 // package can be used
 //
+// A word of warning: using this library trades a certain amount of
+// compile time safety (accessing global variables for instance) for run
+// time checks (checking that a dependency has actually been registered
+// when we ask for it). This is an important tradeoff to consider.
+//
+// In cases wherein dependencies are injected and used early on, a fast
+// failure will be easy to spot, and the advantage of being able to mock,
+// adjust and easily access dependencies can outweigh the downsides. On
+// the other hand, rarely-run functions making use of more obscure
+// dependencies (that you could have forgotten to actually register)
+// could lead to annoying and unnecesary failures.
+//
 package depends
 
 import (
