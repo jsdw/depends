@@ -1,202 +1,9 @@
 package depends
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 )
-
-func Example() {
-
-	type Foo int
-	type Bar struct{ value int }
-	type Wibble string
-
-	// Create a new context:
-	ctx := New()
-
-	// Register some unique types against that context:
-	ctx.Register(Foo(100))
-	ctx.Register(Bar{100})
-	ctx.Register(Wibble("not-wibbly-enough"))
-
-	// Now, we can inject any of those items into a function
-	// by asking for their corresponding type:
-	ctx.Inject(func(foo Foo, bar Bar) {
-		if int(foo) != 100 || int(foo) != bar.value {
-			panic("expected foo and bar to be 100")
-		}
-	})
-
-	// Pointers are handled, and allow changing of an injected thing.
-	// most of the time you probably won't want to do this.
-	ctx.Inject(func(wibble *Wibble) {
-		*wibble = Wibble("wibble")
-	})
-
-	// Inject calls are blocking, so you can use them to pluck things
-	// out of a Context and make available elsewhere.
-	var w string
-	ctx.Inject(func(wibble Wibble) {
-		w = string(wibble)
-	})
-	fmt.Println(w)
-
-	// Output: wibble
-}
-
-func ExampleContext_Child() {
-
-	type Foo string
-	type Bar string
-
-	ctx := New()
-	ctx.Register(Foo("parentFoo"))
-	ctx.Register(Bar("parentBar"))
-
-	childCtx := ctx.Child()
-	childCtx.Register(Foo("childFoo"))
-
-	ctx.Inject(func(f Foo, b Bar) {
-		// prints parentFoo, then parentBar:
-		fmt.Println(f)
-		fmt.Println(b)
-	})
-
-	childCtx.Inject(func(f Foo, b Bar) {
-		// prints childFoo, then parentBar:
-		fmt.Println(f)
-		fmt.Println(b)
-	})
-
-	// Output:
-	// parentFoo
-	// parentBar
-	// childFoo
-	// parentBar
-
-}
-
-func ExampleContext_Register() {
-
-	type Foo int
-	type Bar struct{}
-
-	ctx := New()
-
-	// Register the type Foo:
-	ctx.Register(Foo(100))
-
-	// Any attempts to register Foo again will
-	// overwrite the previous. Also note that
-	// We can Register multiple things at once:
-	ctx.Register(Foo(200), Bar{})
-
-	// This includes using pointers. Register
-	// will automatically handle any levels of
-	// pointer indirection for you:
-	foo := Foo(300)
-	ctx.Register(&foo)
-
-	// Once a type is registered, it can be asked
-	// for by requesting the same type during Inject:
-	ctx.Inject(func(f Foo) {
-
-		// This will print "300":
-		fmt.Printf("%d", f)
-
-	})
-
-	// Output: 300
-}
-
-func ExampleContext_Inject() {
-
-	type Foo int
-	type Bar struct{ Value int }
-	type Unknown int
-
-	ctx := New()
-	ctx.Register(Foo(100), Bar{})
-
-	// You can ask for things by pointer or value:
-	ctx.Inject(func(f Foo, fptr *Foo, b Bar) {
-
-	})
-
-	// A panic will occur if you ask for a type which
-	// has not been registered (in this case, 'Unknown').
-	// use TryInject if you'd like to handle this error
-	// gracefully:
-	ctx.Inject(func(u Unknown) {
-		// never runs
-	})
-
-}
-
-func ExampleContext_Inject_interfaces() {
-
-	// We need to surround interfaces in
-	// concrete types:
-	type R struct{ I io.Reader }
-	type W struct{ I io.Writer }
-
-	ctx := New()
-
-	out := bytes.Buffer{}
-
-	// Satisfy our interfaces by instantiating and
-	// registering some concrete types:
-	ctx.Register(R{strings.NewReader("Read from this")})
-	ctx.Register(W{&out})
-
-	// Make use of the interfaces. To test the copyOut
-	// function, we could instead inject into it using a
-	// context that mocks out the interfaces.
-	copyOut := func(r R, w W) {
-		io.Copy(w.I, r.I)
-	}
-	ctx.Inject(copyOut)
-
-	// Prints "Read from this"
-	fmt.Println(string(out.Bytes()))
-
-	// Output: Read from this
-}
-
-func ExampleContext_TryInject() {
-
-	type Foo int
-	type Unknown int
-
-	ctx := New()
-	ctx.Register(Foo(100))
-
-	// This will not run, but instead return a non-nil
-	// error as Unknown has not been registered but
-	// is being asked for:
-	err := ctx.TryInject(func(f Foo, u Unknown) {
-
-	})
-
-	// If we like, we can match on the error type to
-	// find out the specific issue (but printing it will
-	// return something descriptive):
-	switch err.(type) {
-	case ErrorFunctionNotProvided:
-		fmt.Println("Function not given to TryInject call")
-	case ErrorCircularInject:
-		fmt.Println("OnInjection loop")
-	case ErrorTypeNotRegistered:
-		fmt.Println("Type not registered")
-	}
-
-	// Output: Type not registered
-}
 
 // Context should sort itself out if not called with New,
 // just in case
@@ -399,73 +206,59 @@ func TestPointerInjection(t *testing.T) {
 
 }
 
-// We can define an interface on the type to be injected which can itself
-// ask for injected things and runs on first attempt to ask for the injected
-// item.
-type TestInject struct {
-	inner int
-}
-
-func (ti *TestInject) OnInjection(h TestInject2) {
-	ti.inner = int(h)
-}
-
+// We can register functions that return the things we're interested
+// in if we want to do some initialisation etc before the thing is
+// first obtained. These functions are called exactly once
+type TestInject struct{ inner int }
 type TestInject2 int
-
-func (ti *TestInject2) OnInjection(h TestInject3) {
-	*ti = TestInject2(h)
-}
-
 type TestInject3 int
 
-//// uncomment this to cause a dependency cycle:
-// func (ti *TestInject3) OnInjection(h TestInject) {
-// 	*ti = TestInject3(h.inner)
-// }
-
-func TestOnInject(t *testing.T) {
+func TestRegisterFactories(t *testing.T) {
 
 	ctx := New()
 
-	ctx.Register(TestInject{})
-	ctx.Register(TestInject2(100))
+	ctx.Register(func(h TestInject2) TestInject {
+		return TestInject{int(h)}
+	})
+	ctx.Register(func(h TestInject3) TestInject2 {
+		return TestInject2(int(h))
+	})
 	ctx.Register(TestInject3(2000))
 
 	ctx.Inject(func(i TestInject) {
 		if i.inner != 2000 {
-			t.Error("OnInjection failed to set up value")
+			t.Error("registration functions failed to set up value")
 		}
 	})
 
 }
 
-// The OnInjection function should be called only once
+// The function provided to Register should be called only once
 // (and synchronous Inject should be OK)
-type OnInjectOnce struct {
-	times int32
-}
+func TestRegisterFactoryCalledOnce(t *testing.T) {
 
-func (t *OnInjectOnce) OnInjection() {
-	atomic.AddInt32(&t.times, 1)
-}
-
-func TestOnInjectCalledOnce(t *testing.T) {
+	type Foo struct{}
 
 	ctx := New()
 
-	ctx.Register(OnInjectOnce{times: 0})
+	times := 0
+
+	ctx.Register(func() Foo {
+		times++
+		return Foo{}
+	})
 
 	wg := sync.WaitGroup{}
 	wg.Add(100)
 	for i := 0; i < 100; i++ {
-		go ctx.Inject(func(th OnInjectOnce) {
+		go ctx.Inject(func(th Foo) {
 			wg.Done()
 		})
 	}
 	wg.Wait()
 
-	ctx.Inject(func(th OnInjectOnce) {
-		if th.times != 1 {
+	ctx.Inject(func(th Foo) {
+		if times != 1 {
 			t.Error("init called more than once")
 		}
 	})

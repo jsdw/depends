@@ -31,7 +31,7 @@ func (t ErrorTypeNotRegistered) Error() string {
 // circular injection loop
 type ErrorCircularInject struct {
 	// A slice of the types encountered in the order that
-	// OnInjection was called on them
+	// their registered functions were called
 	Chain []reflect.Type
 }
 
@@ -44,4 +44,14 @@ func (t ErrorCircularInject) Error() string {
 		}
 	}
 	return s
+}
+
+// ErrorPanicInFunction is returned if a panic occurs executing
+// a provided function in order to get hold of a requested value.
+type ErrorPanicInFunction struct {
+	Panic interface{}
+}
+
+func (t ErrorPanicInFunction) Error() string {
+	return fmt.Sprintf("%s", t.Panic)
 }

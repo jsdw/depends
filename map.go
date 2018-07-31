@@ -14,7 +14,16 @@ type injectableKey struct {
 }
 
 type injectableValue struct {
+	// If not nil, this is a function that can have
+	// dependencies injected into, and will be called
+	// in order to return the desired thing.
+	itemMaker func(from []reflect.Type) (reflect.Value, error)
+	// If not zero, this is the item (either provided
+	// directly or once it's returned from the itemMaker)
 	item reflect.Value
+	// Make sure that the item init only happens once.
+	// This will run itemMaker if not nil and populate
+	// item.
 	init sync.Once
 }
 

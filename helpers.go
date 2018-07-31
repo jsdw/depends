@@ -49,20 +49,28 @@ func normalizeKey(ty reflect.Type) injectableKey {
 }
 
 func normalizeValue(val reflect.Value) reflect.Value {
+
+	if val.Kind() != reflect.Ptr {
+		// Add a level of indirection if there isn't one,
+		// so that we can provide a pointer back and allow
+		// modification of stored value
+		ptr := reflect.New(val.Type())
+		ptr.Elem().Set(val)
+		return ptr
+	}
+
+	// We have a pointer. deref until we don't, and then
+	// return the last pointer we saw.
+	var lastPtr reflect.Value
 	for {
 		if val.Kind() == reflect.Ptr {
+			lastPtr = val
 			val = val.Elem()
 		} else {
-			break
+			return lastPtr
 		}
 	}
 
-	// deref and then add back one indirect so that, if
-	// required, one can ask for a pointer to the thing and
-	// then modify it:
-	ptr := reflect.New(val.Type())
-	ptr.Elem().Set(val)
-	return ptr
 }
 
 func denormalizeValue(val reflect.Value, targetType reflect.Type) (reflect.Value, error) {

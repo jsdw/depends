@@ -29,8 +29,8 @@
 package depends
 
 import (
+	"fmt"
 	"reflect"
-	"sync"
 )
 
 // Context is the owner of dependencies. A global context is available for convenience,
@@ -39,10 +39,6 @@ type Context struct {
 	parent      *Context
 	injectables syncMap
 }
-
-// This method name is searched for when a thing is first being injected. If it exists, it is
-// called, and anything asked for by it is injected into it.
-const injectMethodName = "OnInjection"
 
 // New creates a new Context
 func New() *Context {
@@ -62,7 +58,12 @@ func (ctx *Context) Child() *Context {
 }
 
 // Register registers a dependency into the Context to later be asked for
-// with Inject or TryInject.
+// with Inject or TryInject. We can register some type itself, or alternately
+// we can register a function that returns some type.
+//
+// In the latter case, the function will be run the first time the type is
+// asked for. Anything the function asks for as an argument will be injected
+// into it, allowing for complex dependencies between registered types.
 func (ctx *Context) Register(items ...interface{}) {
 	for _, item := range items {
 		ctx.registerOne(item)
@@ -72,20 +73,41 @@ func (ctx *Context) Register(items ...interface{}) {
 func (ctx *Context) registerOne(item interface{}) {
 	val := reflect.ValueOf(item)
 	ty := val.Type()
-	ctx.injectables.put(normalizeKey(ty), &injectableValue{
-		item: normalizeValue(val),
-		init: sync.Once{},
-	})
+	kind := ty.Kind()
+
+	if kind == reflect.Func {
+
+		if ty.NumOut() != 1 {
+			panic(fmt.Sprintf(
+				"If registering a function, it must return exactly one value"+
+					"of the type you'd like to be able to Inject, but the function"+
+					"provided returns %d items", ty.NumOut()))
+		}
+
+		outTy := ty.Out(0)
+		ctx.injectables.put(normalizeKey(outTy), &injectableValue{
+			itemMaker: func(from []reflect.Type) (reflect.Value, error) {
+				vals, err := ctx.injectIntoFunction(from, nil, val)
+				if err != nil {
+					return reflect.Value{}, err
+				}
+				return normalizeValue(vals[0]), nil
+			},
+		})
+
+	} else {
+
+		ctx.injectables.put(normalizeKey(ty), &injectableValue{
+			item: normalizeValue(val),
+		})
+
+	}
+
 }
 
 // Inject injects the dependencies asked for into the function provided. If anything
 // goes wrong, it will panic. It's expected that this will be used in favour of TryInject
 // in most cases, since failure to inject something is normally a sign of programmer error.
-//
-// If a type that is being injected has an OnInjection method attached to it, that method
-// will be run once just before the first attempt to inject the type. Arguments to this
-// method are themselves injected into it. This allows for lazy initialisation and
-// initialisation that depends on other injected types. See the Injection example.
 func (ctx *Context) Inject(fn interface{}) {
 	err := ctx.TryInject(fn)
 
@@ -99,13 +121,14 @@ func (ctx *Context) Inject(fn interface{}) {
 // describing the issue.
 func (ctx *Context) TryInject(fn interface{}) error {
 	fnVal := reflect.ValueOf(fn)
-	return ctx.injectIntoFunction(nil, nil, fnVal)
+	_, err := ctx.injectIntoFunction(nil, nil, fnVal)
+	return err
 }
 
-func (ctx *Context) injectIntoFunction(from []reflect.Type, fnRecv *reflect.Value, fnVal reflect.Value) error {
+func (ctx *Context) injectIntoFunction(from []reflect.Type, fnRecv *reflect.Value, fnVal reflect.Value) (out []reflect.Value, outErr error) {
 	fnTy := fnVal.Type()
 	if fnTy.Kind() != reflect.Func {
-		return ErrorFunctionNotProvided{}
+		return []reflect.Value{}, ErrorFunctionNotProvided{}
 	}
 
 	argCount := fnTy.NumIn()
@@ -126,16 +149,25 @@ func (ctx *Context) injectIntoFunction(from []reflect.Type, fnRecv *reflect.Valu
 			// We need to add extra info to this error:
 			case ErrorTypeNotRegistered:
 				e.Pos = i + 1
-				return e
+				outErr = e
+				return
 			default:
-				return err
+				outErr = e
+				return
 			}
 		}
 		args = append(args, argVal)
 	}
 
-	_ = fnVal.Call(args)
-	return nil
+	// recover from any panic that occurs when calling the function:
+	defer func() {
+		if e := recover(); e != nil {
+			outErr = ErrorPanicInFunction{e}
+		}
+	}()
+
+	out = fnVal.Call(args)
+	return
 }
 
 func (ctx *Context) getInjectable(from []reflect.Type, ty reflect.Type) (reflect.Value, error) {
@@ -147,9 +179,8 @@ func (ctx *Context) getInjectable(from []reflect.Type, ty reflect.Type) (reflect
 	if !ok {
 		if ctx.parent != nil {
 			return ctx.parent.getInjectable(from, ty)
-		} else {
-			return reflect.Value{}, ErrorTypeNotRegistered{Ty: normalTy}
 		}
+		return reflect.Value{}, ErrorTypeNotRegistered{Ty: normalTy}
 	}
 
 	// run the instantiation method for an injected thing exactly once if one is present.
@@ -157,25 +188,21 @@ func (ctx *Context) getInjectable(from []reflect.Type, ty reflect.Type) (reflect
 	var initErr error
 	arg.init.Do(func() {
 
-		valPtr := arg.item
-		valPtrTy := valPtr.Type()
-
-		if method, hasMethod := valPtrTy.MethodByName(injectMethodName); hasMethod {
-
-			// if the type we key on has already been seen, complain as we've hit a loop:
-			if typeExistsInSlice(from, normalTy) {
-				initErr = ErrorCircularInject{appendType(from, normalTy)}
-				return
-			}
-
-			nextFrom := appendType(from, normalTy)
-			injectErr := ctx.injectIntoFunction(nextFrom, &valPtr, method.Func)
-			if injectErr != nil {
-				initErr = injectErr
-				return
-			}
-
+		// if we have an itemMaker we need to run it to get our item, otherwise bail.
+		if arg.itemMaker == nil {
+			return
 		}
+
+		// if the type we key on has already been seen, complain as we've hit a loop:
+		if typeExistsInSlice(from, normalTy) {
+			initErr = ErrorCircularInject{appendType(from, normalTy)}
+			return
+		}
+
+		// run the item maker to create our item, passing our chain of seen types.
+		res, err := arg.itemMaker(from)
+		initErr = err
+		arg.item = res
 
 	})
 	if initErr != nil {
