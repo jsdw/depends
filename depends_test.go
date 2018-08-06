@@ -152,6 +152,47 @@ func TestPointersAndNonPointers(t *testing.T) {
 
 }
 
+// Test that we can tweak the original pointer to a thing we
+// injected if we want.
+func TestOriginalPointerStillUseful(t *testing.T) {
+
+	type Thing struct {
+		Val int
+	}
+	type NotPointedTo struct {
+		Val int
+	}
+
+	thing := &Thing{100}
+	notPointedTo := NotPointedTo{100}
+
+	ctx := New()
+	ctx.Register(thing)
+	ctx.Register(notPointedTo)
+
+	ctx.Inject(func(thing Thing, np NotPointedTo) {
+		if thing.Val != 100 {
+			t.Error("thing val should start at 100")
+		}
+		if np.Val != 100 {
+			t.Error("np val should start at 100")
+		}
+	})
+
+	thing.Val = 200
+	notPointedTo.Val = 200
+
+	ctx.Inject(func(thing Thing, np NotPointedTo) {
+		if thing.Val != 200 {
+			t.Error("VAl should now be 200")
+		}
+		if np.Val != 100 {
+			t.Error("np val should still be 100")
+		}
+	})
+
+}
+
 // We can alter injected things by asking for them by pointer:
 func TestPointersCanAlterInjected(t *testing.T) {
 
